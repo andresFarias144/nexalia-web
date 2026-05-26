@@ -43,6 +43,12 @@ function isWeekday(date: Date) {
   return day >= 1 && day <= 5;
 }
 
+function nextWeekday(date: Date) {
+  const next = new Date(date);
+  while (!isWeekday(next)) next.setDate(next.getDate() + 1);
+  return next;
+}
+
 function isSimulatedBusy(dateKey: string, time: string) {
   const source = dateKey + "-" + time;
   let hash = 0;
@@ -64,7 +70,7 @@ function buildMonth(year: number, month: number) {
 
 export default function BookingCalendar() {
   const today = useMemo(() => startOfDay(new Date()), []);
-  const minDate = useMemo(() => addDays(today, 4), [today]);
+  const minDate = useMemo(() => nextWeekday(addDays(today, 4)), [today]);
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(minDate.getFullYear(), minDate.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState<Date | null>(() => minDate);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
