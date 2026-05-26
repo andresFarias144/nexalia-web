@@ -24,7 +24,7 @@ export default function AgendaPage() {
           </p>
           <div className="mt-6 flex flex-wrap gap-3 text-[.78rem] text-text-muted">
             <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-bg-card/70 px-4 py-2"><Clock size={15} className="text-brand-green" /> Turnos de 30 minutos</span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-bg-card/70 px-4 py-2">Disponibilidad simulada</span>
+            
           </div>
         </div>
         <BookingCalendar />

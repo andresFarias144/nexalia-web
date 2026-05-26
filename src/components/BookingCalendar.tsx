@@ -49,11 +49,20 @@ function nextWeekday(date: Date) {
   return next;
 }
 
-function isSimulatedBusy(dateKey: string, time: string) {
-  const source = dateKey + "-" + time;
+function hashText(source: string) {
   let hash = 0;
   for (let i = 0; i < source.length; i += 1) hash = (hash * 31 + source.charCodeAt(i)) % 997;
-  return hash % 10 < 5 || (time.endsWith("00") && hash % 7 === 0);
+  return hash;
+}
+
+function isFullyBookedDay(dateKey: string) {
+  const hash = hashText("day-" + dateKey);
+  return hash % 11 === 0 || hash % 17 === 3;
+}
+
+function isSimulatedBusy(dateKey: string, time: string) {
+  const hash = hashText(dateKey + "-" + time);
+  return isFullyBookedDay(dateKey) || hash % 10 < 5 || (time.endsWith("00") && hash % 7 === 0);
 }
 
 function buildMonth(year: number, month: number) {
@@ -104,7 +113,7 @@ export default function BookingCalendar() {
 
   const canSelectDate = (date: Date | null) => {
     if (!date) return false;
-    return startOfDay(date) >= minDate && isWeekday(date);
+    return startOfDay(date) >= minDate && isWeekday(date) && !isFullyBookedDay(toKey(date));
   };
 
   const nextMonth = () => setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1));
@@ -164,7 +173,9 @@ export default function BookingCalendar() {
                   ? "border-brand-green bg-brand-green text-[#0a0a12] font-semibold shadow-[0_0_28px_rgba(128,186,39,.2)]"
                   : enabled
                     ? "border-white/[0.08] bg-bg-tertiary/65 text-text-secondary hover:border-brand-blue hover:text-text-primary"
-                    : "border-transparent text-text-muted/25")}
+                    : date && startOfDay(date) >= minDate && isWeekday(date) && isFullyBookedDay(toKey(date))
+                      ? "border-white/[0.04] bg-white/[0.03] text-text-muted/25 line-through"
+                      : "border-transparent text-text-muted/25")}
               >
                 {date?.getDate() ?? ""}
               </button>
