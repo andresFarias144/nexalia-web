@@ -80,7 +80,7 @@ export default function Hero() {
 
           <motion.div variants={heroItem} className="flex gap-4 flex-wrap">
             <Link
-              href="#contacto"
+              href="/agenda"
               className="sheen inline-flex items-center gap-2 bg-brand-green text-[#0a0a12] px-7 py-3 rounded-full font-semibold text-[.875rem] hover:bg-brand-green-light transition hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(128,186,39,0.28)]"
             >
               Agendar diagnóstico gratuito <ArrowRight size={16} />

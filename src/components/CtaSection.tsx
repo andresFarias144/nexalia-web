@@ -23,9 +23,7 @@ export default function CtaSection() {
             y te mostramos qué podemos mejorar. Sin compromiso.
           </p>
           <a
-            href="https://wa.me/5493364539663?text=Hola%2C%20me%20interesa%20agendar%20un%20diagn%C3%B3stico%20gratuito%20con%20Nexalia"
-            target="_blank"
-            rel="noopener noreferrer"
+            href="/agenda"
             className="sheen relative z-10 inline-flex bg-brand-green text-[#0a0a12] px-8 py-3.5 rounded-full font-semibold text-[.875rem] hover:bg-brand-green-light transition hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(128,186,39,0.25)]"
           >
             Agendar diagnóstico gratuito →
