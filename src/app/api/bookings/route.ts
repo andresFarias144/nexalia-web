@@ -4,6 +4,7 @@ import { google } from "googleapis";
 const TIME_ZONE = "America/Argentina/Buenos_Aires";
 const SLOT_MINUTES = 30;
 const availableTimes = ["13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00", "17:30", "18:00", "18:30"];
+const defaultNotificationEmails = ["info@multipixel.com.ar", "info@wicrea.com"];
 
 type BookingPayload = {
   dateKey?: string;
@@ -22,6 +23,15 @@ function getEnv() {
 
   if (!calendarId || !clientEmail || !privateKey) return null;
   return { calendarId, clientEmail, privateKey };
+}
+
+function getNotificationEmails() {
+  const configuredEmails = (process.env.BOOKING_NOTIFICATION_EMAILS ?? "")
+    .split(",")
+    .map((email) => email.trim())
+    .filter(Boolean);
+
+  return configuredEmails.length > 0 ? configuredEmails : defaultNotificationEmails;
 }
 
 function getCalendarClient() {
@@ -156,8 +166,10 @@ export async function POST(req: NextRequest) {
     }
 
     const fullName = payload.name!.trim() + " " + payload.lastname!.trim();
+    const notificationEmails = getNotificationEmails();
     const response = await client.calendar.events.insert({
       calendarId: client.calendarId,
+      sendUpdates: notificationEmails.length > 0 ? "all" : "none",
       requestBody: {
         summary: "Diagnostico Nexalia - " + payload.company!.trim(),
         description: [
@@ -169,6 +181,9 @@ export async function POST(req: NextRequest) {
         ].join("\n"),
         start: { dateTime: startDateTime, timeZone: TIME_ZONE },
         end: { dateTime: endDateTime, timeZone: TIME_ZONE },
+        attendees: notificationEmails.map((email) => ({ email })),
+        guestsCanInviteOthers: false,
+        guestsCanModify: false,
         extendedProperties: {
           private: {
             source: "nexalia-web",
