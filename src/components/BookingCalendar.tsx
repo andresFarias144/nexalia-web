@@ -14,6 +14,12 @@ type Reservation = {
   phone: string;
   address: string;
 };
+type CalendarBusyEvent = {
+  id?: string | null;
+  summary?: string | null;
+  start?: string | null;
+  end?: string | null;
+};
 
 const monthNames = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const dayNames = ["L", "M", "M", "J", "V", "S", "D"];
@@ -84,6 +90,10 @@ export default function BookingCalendar() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(() => minDate);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [calendarBusy, setCalendarBusy] = useState<CalendarBusyEvent[]>([]);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [apiError, setApiError] = useState("");
   const [confirmed, setConfirmed] = useState<Reservation | null>(null);
   const [form, setForm] = useState({ name: "", lastname: "", company: "", phone: "", address: "" });
 
@@ -101,19 +111,63 @@ export default function BookingCalendar() {
 
   const cells = useMemo(() => buildMonth(visibleMonth.getFullYear(), visibleMonth.getMonth()), [visibleMonth]);
   const selectedKey = selectedDate ? toKey(selectedDate) : "";
-  const reservedKeys = useMemo(() => new Set(reservations.map((item) => item.dateKey + "-" + item.time)), [reservations]);
+  const selectedDateIsWithinSimulatedWindow = selectedDate ? selectedDate <= addDays(minDate, 62) : false;
+  const reservedKeys = useMemo(() => {
+    const keys = new Set(reservations.map((item) => item.dateKey + "-" + item.time));
+    for (const event of calendarBusy) {
+      if (!event.start || !event.end) continue;
+      const eventStart = new Date(event.start).getTime();
+      const eventEnd = new Date(event.end).getTime();
+      for (const time of times) {
+        const slotStart = new Date(selectedKey + "T" + time + ":00-03:00").getTime();
+        const slotEnd = slotStart + 30 * 60 * 1000;
+        if (slotStart < eventEnd && slotEnd > eventStart) keys.add(selectedKey + "-" + time);
+      }
+    }
+    return keys;
+  }, [calendarBusy, reservations, selectedKey]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const from = toKey(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1));
+    const to = toKey(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0));
+
+    queueMicrotask(() => {
+      if (controller.signal.aborted) return;
+      setLoadingAvailability(true);
+      setApiError("");
+
+      fetch("/api/bookings?from=" + from + "&to=" + to, { signal: controller.signal })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("No pudimos leer la disponibilidad.");
+          return response.json();
+        })
+        .then((data: { busy?: CalendarBusyEvent[] }) => setCalendarBusy(data.busy ?? []))
+        .catch((error) => {
+          if (error.name === "AbortError") return;
+          setCalendarBusy([]);
+          setApiError("No pudimos sincronizar la disponibilidad. Probemos de nuevo en unos segundos.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoadingAvailability(false);
+        });
+    });
+
+    return () => controller.abort();
+  }, [visibleMonth]);
 
   const getSlotState = (time: string): SlotState => {
     if (!selectedDate) return "busy";
     const key = selectedKey + "-" + time;
     if (selectedTime === time) return "selected";
-    if (reservedKeys.has(key) || isSimulatedBusy(selectedKey, time)) return "busy";
+    if (reservedKeys.has(key) || (selectedDateIsWithinSimulatedWindow && isSimulatedBusy(selectedKey, time))) return "busy";
     return "available";
   };
 
   const canSelectDate = (date: Date | null) => {
     if (!date) return false;
-    return startOfDay(date) >= minDate && isWeekday(date) && !isFullyBookedDay(toKey(date));
+    const isWithinSimulatedWindow = date <= addDays(minDate, 62);
+    return startOfDay(date) >= minDate && isWeekday(date) && !(isWithinSimulatedWindow && isFullyBookedDay(toKey(date)));
   };
 
   const nextMonth = () => setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1));
@@ -122,16 +176,34 @@ export default function BookingCalendar() {
     if (previous >= new Date(today.getFullYear(), today.getMonth(), 1)) setVisibleMonth(previous);
   };
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedDate || !selectedTime) return;
+    if (!selectedDate || !selectedTime || submitting) return;
     const reservation: Reservation = { dateKey: selectedKey, time: selectedTime, ...form };
-    const next = [...reservations, reservation];
-    setReservations(next);
-    setConfirmed(reservation);
-    window.localStorage.setItem("nexalia-reservations", JSON.stringify(next));
-    setSelectedTime(null);
-    setForm({ name: "", lastname: "", company: "", phone: "", address: "" });
+    setSubmitting(true);
+    setApiError("");
+
+    try {
+      const response = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reservation),
+      });
+
+      if (response.status === 409) throw new Error("Ese horario acaba de ocuparse. Elegi otro, por favor.");
+      if (!response.ok) throw new Error("No pudimos confirmar el turno. Revisemos la conexion con Google Calendar.");
+
+      const next = [...reservations, reservation];
+      setReservations(next);
+      setConfirmed(reservation);
+      window.localStorage.setItem("nexalia-reservations", JSON.stringify(next));
+      setSelectedTime(null);
+      setForm({ name: "", lastname: "", company: "", phone: "", address: "" });
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "No pudimos confirmar el turno.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -173,7 +245,7 @@ export default function BookingCalendar() {
                   ? "border-brand-green bg-brand-green text-[#0a0a12] font-semibold shadow-[0_0_28px_rgba(128,186,39,.2)]"
                   : enabled
                     ? "border-white/[0.08] bg-bg-tertiary/65 text-text-secondary hover:border-brand-blue hover:text-text-primary"
-                    : date && startOfDay(date) >= minDate && isWeekday(date) && isFullyBookedDay(toKey(date))
+                    : date && startOfDay(date) >= minDate && isWeekday(date) && date <= addDays(minDate, 62) && isFullyBookedDay(toKey(date))
                       ? "border-white/[0.04] bg-white/[0.03] text-text-muted/25 line-through"
                       : "border-transparent text-text-muted/25")}
               >
@@ -222,6 +294,12 @@ export default function BookingCalendar() {
           })}
         </div>
 
+        {(loadingAvailability || apiError) && (
+          <div className={"mt-4 rounded-[12px] border px-4 py-3 text-xs " + (apiError ? "border-red-400/20 bg-red-500/10 text-red-100/80" : "border-brand-blue/15 bg-brand-blue/10 text-text-secondary")}>
+            {apiError || "Sincronizando disponibilidad con Google Calendar..."}
+          </div>
+        )}
+
         <form onSubmit={submit} className="mt-6 space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field icon={<UserRound size={16} />} label="Nombre" value={form.name} onChange={(value) => setForm({ ...form, name: value })} />
@@ -234,10 +312,10 @@ export default function BookingCalendar() {
           </div>
           <button
             type="submit"
-            disabled={!selectedDate || !selectedTime || Object.values(form).some((value) => !value.trim())}
+            disabled={submitting || !selectedDate || !selectedTime || Object.values(form).some((value) => !value.trim())}
             className="sheen mt-2 w-full rounded-full bg-brand-green px-6 py-3 text-sm font-semibold text-[#0a0a12] transition hover:bg-brand-green-light disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Reservar diagnostico
+            {submitting ? "Reservando..." : "Reservar diagnostico"}
           </button>
         </form>
 
