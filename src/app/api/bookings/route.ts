@@ -167,33 +167,48 @@ export async function POST(req: NextRequest) {
 
     const fullName = payload.name!.trim() + " " + payload.lastname!.trim();
     const notificationEmails = getNotificationEmails();
-    const response = await client.calendar.events.insert({
-      calendarId: client.calendarId,
-      sendUpdates: notificationEmails.length > 0 ? "all" : "none",
-      requestBody: {
-        summary: "Diagnostico Nexalia - " + payload.company!.trim(),
-        description: [
-          "Reserva desde nexalia.com.ar",
-          "Nombre: " + fullName,
-          "Empresa: " + payload.company!.trim(),
-          "Telefono: " + payload.phone!.trim(),
-          "Direccion: " + payload.address!.trim(),
-        ].join("\n"),
-        start: { dateTime: startDateTime, timeZone: TIME_ZONE },
-        end: { dateTime: endDateTime, timeZone: TIME_ZONE },
-        attendees: notificationEmails.map((email) => ({ email })),
-        guestsCanInviteOthers: false,
-        guestsCanModify: false,
-        extendedProperties: {
-          private: {
-            source: "nexalia-web",
-            phone: payload.phone!.trim(),
-          },
+    const baseEvent = {
+      summary: "Diagnostico Nexalia - " + payload.company!.trim(),
+      description: [
+        "Reserva desde nexalia.com.ar",
+        "Nombre: " + fullName,
+        "Empresa: " + payload.company!.trim(),
+        "Telefono: " + payload.phone!.trim(),
+        "Direccion: " + payload.address!.trim(),
+      ].join("\n"),
+      start: { dateTime: startDateTime, timeZone: TIME_ZONE },
+      end: { dateTime: endDateTime, timeZone: TIME_ZONE },
+      extendedProperties: {
+        private: {
+          source: "nexalia-web",
+          phone: payload.phone!.trim(),
         },
       },
-    });
+    };
 
-    return NextResponse.json({ ok: true, eventId: response.data.id });
+    try {
+      const response = await client.calendar.events.insert({
+        calendarId: client.calendarId,
+        sendUpdates: notificationEmails.length > 0 ? "all" : "none",
+        requestBody: {
+          ...baseEvent,
+          attendees: notificationEmails.map((email) => ({ email })),
+          guestsCanInviteOthers: false,
+          guestsCanModify: false,
+        },
+      });
+
+      return NextResponse.json({ ok: true, eventId: response.data.id, notified: notificationEmails.length > 0 });
+    } catch (notificationError) {
+      console.error("Calendar attendee notification error:", notificationError);
+      const response = await client.calendar.events.insert({
+        calendarId: client.calendarId,
+        sendUpdates: "none",
+        requestBody: baseEvent,
+      });
+
+      return NextResponse.json({ ok: true, eventId: response.data.id, notified: false });
+    }
   } catch (error) {
     console.error("Calendar booking error:", error);
     return NextResponse.json({ error: "Could not create booking" }, { status: 500 });
